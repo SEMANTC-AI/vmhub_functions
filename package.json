@@ -1,0 +1,23 @@
+{
+  "name": "vmhub-functions",
+  "version": "1.0.0",
+  "description": "VMHub Campaign Processing Functions",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "lint": "eslint 'src/**/*.{js,ts}'",
+    "format": "prettier --write 'src/**/*.{js,ts}'"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "author": "",
+  "license": "ISC"
+}
