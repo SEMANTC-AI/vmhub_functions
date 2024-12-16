@@ -8,10 +8,12 @@ export abstract class BaseCampaignProcessor {
   protected bigquery: BigQuery;
   protected cnpj: string;
   protected projectId: string;
+  protected userId: string;
   
-  constructor(cnpj: string) {
+  constructor(cnpj: string, userId: string) {
     this.bigquery = new BigQuery();
     this.cnpj = cnpj;
+    this.userId = userId;
     this.projectId = process.env.GCLOUD_PROJECT || '';
     
     if (!this.projectId) {
@@ -20,13 +22,13 @@ export abstract class BaseCampaignProcessor {
   }
 
   protected async saveCampaignTargets(targets: CampaignTarget[]): Promise<void> {
-    console.log('Starting batch write to Firestore');
+    console.log(`Saving campaign targets under user ${this.userId}`);
     const batch = db.batch();
     
     for (const target of targets) {
       const campaignRef = db
         .collection('users')
-        .doc(this.cnpj)
+        .doc(this.userId)  // Use userId instead of CNPJ
         .collection('campaigns')
         .doc(target.campaignType)
         .collection('targets')

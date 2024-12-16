@@ -3,18 +3,33 @@
 import { BaseCampaignProcessor } from './processor';
 import { CampaignTarget } from '../types/campaign';
 
+interface ReactivationRow {
+  customerId: string;
+  name: string;
+  phone: string;
+  lastPurchaseDate: string;
+  daysSinceLastPurchase: number;
+}
+
 export class ReactivationCampaignProcessor extends BaseCampaignProcessor {
   async process(): Promise<void> {
-    // only process after day 20 of the month
-    const currentDay = new Date().getDate();
-    if (currentDay < 20) return;
-
+    console.log(`Starting reactivation campaign processing for CNPJ ${this.cnpj}`);
+    
     const query = `
-      WITH LastPurchase AS (
+      WITH TODAY AS (
+        SELECT 
+          DATETIME(CURRENT_TIMESTAMP(), 'America/Sao_Paulo') as brazil_time
+      ),
+      LastPurchase AS (
         SELECT 
           cpfCliente,
-          MAX(data) as last_purchase_date
-        FROM \`${this.cnpj}_RAW.vendas\`
+          MAX(data) as last_purchase_date,
+          DATE_DIFF(
+            CURRENT_DATE('America/Sao_Paulo'),
+            DATE(MAX(data), 'America/Sao_Paulo'),
+            DAY
+          ) as days_since_last_purchase
+        FROM \`${this.projectId}.CNPJ_${this.cnpj}_RAW.vendas\`
         WHERE status = 'SUCESSO'
         GROUP BY cpfCliente
       ),
@@ -22,53 +37,98 @@ export class ReactivationCampaignProcessor extends BaseCampaignProcessor {
         SELECT 
           user_id,
           MAX(sent_at) as last_message_sent
-        FROM \`${this.cnpj}_CAMPAIGN.message_history\`
+        FROM \`${this.projectId}.CNPJ_${this.cnpj}_CAMPAIGN.message_history\`
         WHERE campaign_type = 'reactivation'
         GROUP BY user_id
       ),
-      VoucherUsage AS (
+      RecentVoucherUse AS (
         SELECT DISTINCT
           cpfCliente
-        FROM \`${this.cnpj}_RAW.vendas\`
+        FROM \`${this.projectId}.CNPJ_${this.cnpj}_RAW.vendas\`
         WHERE 
-          cupom IS NOT NULL
+          tipoPagamento = 'VOUCHER'
           AND status = 'SUCESSO'
-          AND DATE(TIMESTAMP_ADD(data, INTERVAL -3 HOUR)) >= 
-            DATE_TRUNC(CURRENT_DATE(), MONTH)
+          AND DATE(data, 'America/Sao_Paulo') >= DATE_SUB(
+            CURRENT_DATE('America/Sao_Paulo'), 
+            INTERVAL 30 DAY
+          )
       )
       SELECT 
-        c.id as customerId,
+        CAST(c.id as STRING) as customerId,
         c.nome as name,
         c.telefone as phone,
-        lp.last_purchase_date
-      FROM \`${this.cnpj}_RAW.clientes\` c
+        FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%S.%EZ', lp.last_purchase_date) as lastPurchaseDate,
+        lp.days_since_last_purchase as daysSinceLastPurchase
+      FROM \`${this.projectId}.CNPJ_${this.cnpj}_RAW.clientes\` c
       INNER JOIN LastPurchase lp ON c.cpf = lp.cpfCliente
-      LEFT JOIN MessageHistory mh ON c.id = mh.user_id
-      LEFT JOIN VoucherUsage vu ON c.cpf = vu.cpfCliente
+      LEFT JOIN MessageHistory mh ON CAST(c.id as STRING) = mh.user_id
+      LEFT JOIN RecentVoucherUse rv ON c.cpf = rv.cpfCliente
       WHERE 
-        DATE(TIMESTAMP_ADD(lp.last_purchase_date, INTERVAL -3 HOUR)) < 
-          DATE_TRUNC(CURRENT_DATE(), MONTH)
+        -- Inactive for 90+ days
+        lp.days_since_last_purchase >= 90
+        -- No recent reactivation message (within last 30 days)
         AND (
           mh.last_message_sent IS NULL
-          OR DATE(mh.last_message_sent) < DATE_TRUNC(CURRENT_DATE(), MONTH)
+          OR DATE(mh.last_message_sent, 'America/Sao_Paulo') < 
+             DATE_SUB(CURRENT_DATE('America/Sao_Paulo'), INTERVAL 30 DAY)
         )
-        AND vu.cpfCliente IS NULL
+        -- Hasn't used a voucher recently
+        AND rv.cpfCliente IS NULL
+        -- Has valid phone number
+        AND c.telefone IS NOT NULL
+        AND LENGTH(REGEXP_REPLACE(c.telefone, r'[^0-9]', '')) >= 10;
     `;
 
-    const [rows] = await this.bigquery.query(query);
+    try {
+      console.log('Executing BigQuery query for reactivation targets');
+      
+      const [job] = await this.bigquery.createQueryJob({
+        query,
+        location: 'US',
+        jobTimeoutMs: 60000
+      });
 
-    const targets: CampaignTarget[] = rows.map(row => ({
-      customerId: row.customerId,
-      name: row.name,
-      phone: row.phone,
-      campaignType: 'reactivation',
-      data: {
-        lastPurchaseDate: row.last_purchase_date
+      const [rows] = await job.getQueryResults();
+
+      console.log(`Found ${rows.length} reactivation targets`);
+
+      if (rows.length === 0) {
+        console.log('No reactivation targets found');
+        return;
       }
-    }));
 
-    if (targets.length > 0) {
+      const targets: CampaignTarget[] = rows.map((row: ReactivationRow) => ({
+        customerId: row.customerId,
+        name: row.name,
+        phone: this.formatPhoneNumber(row.phone),
+        campaignType: 'reactivation',
+        data: {
+          lastPurchaseDate: row.lastPurchaseDate,
+          daysSinceLastPurchase: row.daysSinceLastPurchase
+        }
+      }));
+
+      console.log(`Saving ${targets.length} campaign targets to Firestore`);
       await this.saveCampaignTargets(targets);
+      console.log('Successfully saved reactivation campaign targets');
+
+    } catch (error) {
+      console.error('Error processing reactivation campaign:', error);
+      throw error;
     }
+  }
+
+  private formatPhoneNumber(phone: string): string {
+    const cleaned = phone.replace(/\D/g, '');
+    
+    if (cleaned.length === 11) {
+      return `55${cleaned}`;
+    } else if (cleaned.length === 10) {
+      return `559${cleaned}`;
+    } else if (cleaned.length >= 12) {
+      return cleaned;
+    }
+    
+    throw new Error(`Invalid phone number format: ${phone}`);
   }
 }

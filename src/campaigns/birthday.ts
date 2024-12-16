@@ -12,6 +12,10 @@ interface BirthdayRow {
 }
 
 export class BirthdayCampaignProcessor extends BaseCampaignProcessor {
+  constructor(cnpj: string, userId: string) {
+    super(cnpj, userId);
+  }
+  
   async process(): Promise<void> {
     console.log(`Starting birthday campaign processing for CNPJ ${this.cnpj}`);
     

@@ -13,20 +13,30 @@ export const processCampaigns = async (
 ) => {
   try {
     // Get all active CNPJs
-    const configsSnapshot = await db.collectionGroup('tokens')
+    const configsSnapshot = await db.collectionGroup('config')
       .where('status', '==', 'provisioned')
       .get();
 
     for (const config of configsSnapshot.docs) {
-      const cnpj = config.data().cnpj;
-      
       try {
+        const data = config.data();
+        const cnpj = data.cnpj;
+        // Get the userId from the document path
+        const userId = config.ref.parent.parent?.id;
+
+        if (!userId) {
+          console.error(`Could not determine userId for CNPJ ${cnpj}`);
+          continue;
+        }
+        
+        console.log(`Processing campaigns for CNPJ ${cnpj}, userId ${userId}`);
+
         // Process each campaign type
         const processors = [
-          new BirthdayCampaignProcessor(cnpj),
-          new WelcomeCampaignProcessor(cnpj),
-          new ReactivationCampaignProcessor(cnpj),
-          new LoyaltyCampaignProcessor(cnpj)
+          new BirthdayCampaignProcessor(cnpj, userId),
+          new WelcomeCampaignProcessor(cnpj, userId),
+          new ReactivationCampaignProcessor(cnpj, userId),
+          new LoyaltyCampaignProcessor(cnpj, userId)
         ];
 
         await Promise.all(
@@ -42,7 +52,7 @@ export const processCampaigns = async (
         
         console.log(`Completed all campaign processing for CNPJ ${cnpj}`);
       } catch (error) {
-        console.error(`Error in campaign batch for CNPJ ${cnpj}:`, error);
+        console.error(`Error in campaign batch for config document:`, error);
       }
     }
   } catch (error) {
