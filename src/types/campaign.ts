@@ -1,28 +1,5 @@
 // src/types/campaign.ts
 
-export interface Customer {
-  id: string;
-  nome: string;
-  dataNascimento: string;
-  cpf: string;
-  telefone: string;
-  email: string;
-  genero: string;
-  dataCadastro: string;
-  primeiraCompra: string;
-}
-
-export interface Transaction {
-  data: string;
-  cpfCliente: string;
-  nomeCliente: string;
-  telefoneCliente: string;
-  tipoPagamento: 'TEF' | 'QRCODE' | 'VOUCHER' | 'APP';
-  status: string;
-  valor: string;
-  cupom: string | null;
-}
-
 export interface CampaignTarget {
   customerId: string;
   name: string;
@@ -34,5 +11,22 @@ export interface CampaignTarget {
     lastPurchaseDate?: string;
     purchaseCount?: number;
     totalSpent?: number;
+    [key: string]: any;
+  };
+}
+
+export interface MessageHistory {
+  sentAt: string;
+  status: 'pending' | 'sent' | 'delivered' | 'failed';
+}
+
+export type CampaignType = 'birthday' | 'welcome' | 'reactivation' | 'loyalty';
+
+export interface ProcessingResult {
+  success: boolean;
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
   };
 }

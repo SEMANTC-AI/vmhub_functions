@@ -7,22 +7,19 @@
     "sourceMap": true,
     "strict": true,
     "target": "es2017",
-    "skipLibCheck": true,
+    "baseUrl": "./",
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "composite": false,
-    "declaration": true,
-    "declarationMap": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "inlineSources": false,
-    "isolatedModules": true,
-    "moduleResolution": "node",
-    "noUnusedParameters": false,
-    "preserveWatchOutput": true,
-    "rootDir": "src"
+    "resolveJsonModule": true,
+    "moduleResolution": "node"
   },
   "compileOnSave": true,
   "include": [
     "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "lib"
   ]
 }

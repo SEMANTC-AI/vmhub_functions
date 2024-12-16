@@ -1,19 +1,26 @@
 // src/campaigns/processor.ts
 
 import { BigQuery } from '@google-cloud/bigquery';
-import { db } from '../config/firebase';
 import { CampaignTarget } from '../types/campaign';
+import { db } from '../config/firebase';
 
 export abstract class BaseCampaignProcessor {
   protected bigquery: BigQuery;
   protected cnpj: string;
+  protected projectId: string;
   
   constructor(cnpj: string) {
     this.bigquery = new BigQuery();
     this.cnpj = cnpj;
+    this.projectId = process.env.GCLOUD_PROJECT || '';
+    
+    if (!this.projectId) {
+      throw new Error('GCLOUD_PROJECT environment variable not set');
+    }
   }
 
-  protected async saveCampaignTargets(targets: CampaignTarget[]) {
+  protected async saveCampaignTargets(targets: CampaignTarget[]): Promise<void> {
+    console.log('Starting batch write to Firestore');
     const batch = db.batch();
     
     for (const target of targets) {
@@ -34,30 +41,7 @@ export abstract class BaseCampaignProcessor {
     }
 
     await batch.commit();
-  }
-
-  protected async getMessageHistory(campaignType: string, customerId: string) {
-    const query = `
-      SELECT 
-        sentAt,
-        status
-      FROM \`${this.cnpj}_CAMPAIGN.message_history\`
-      WHERE 
-        campaign_type = @campaignType 
-        AND user_id = @customerId
-      ORDER BY sentAt DESC
-      LIMIT 1
-    `;
-
-    const [rows] = await this.bigquery.query({
-      query,
-      params: {
-        campaignType,
-        customerId
-      }
-    });
-
-    return rows[0] || null;
+    console.log('Completed batch write to Firestore');
   }
 
   abstract process(): Promise<void>;

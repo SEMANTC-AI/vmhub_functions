@@ -1,23 +1,32 @@
 {
-  "name": "vmhub-functions",
-  "version": "1.0.0",
-  "description": "VMHub Campaign Processing Functions",
-  "main": "lib/index.js",
+  "name": "functions",
   "scripts": {
+    "lint": "eslint --ext .js,.ts .",
+    "lint:fix": "eslint --fix --ext .js,.ts .",
     "build": "tsc",
-    "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log",
-    "test": "jest",
-    "lint": "eslint 'src/**/*.{js,ts}'",
-    "format": "prettier --write 'src/**/*.{js,ts}'"
+    "logs": "firebase functions:log"
   },
   "engines": {
     "node": "18"
   },
-  "author": "",
-  "license": "ISC"
+  "main": "lib/index.js",
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.0.0",
+    "firebase-admin": "^11.11.0",
+    "firebase-functions": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "eslint": "^8.57.1",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.31.0",
+    "typescript": "^5.0.0"
+  },
+  "private": true
 }
