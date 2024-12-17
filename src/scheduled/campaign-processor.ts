@@ -7,75 +7,83 @@ import { WelcomeCampaignProcessor } from '../campaigns/welcome';
 import { ReactivationCampaignProcessor } from '../campaigns/reactivation';
 import { LoyaltyCampaignProcessor } from '../campaigns/loyalty';
 
-export const processCampaigns = async (
-  context: functions.EventContext,
-  data: any
-) => {
-  try {
-    // Get all active CNPJs
-    const configsSnapshot = await db.collectionGroup('config')
-      .where('status', '==', 'provisioned')
-      .get();
-
-    for (const config of configsSnapshot.docs) {
-      try {
-        const data = config.data();
-        const cnpj = data.cnpj;
-        // Get the userId from the document path
-        const userId = config.ref.parent.parent?.id;
-
-        if (!userId) {
-          console.error(`Could not determine userId for CNPJ ${cnpj}`);
-          continue;
-        }
-        
-        console.log(`Processing campaigns for CNPJ ${cnpj}, userId ${userId}`);
-
-        // Process each campaign type
-        const processors = [
-          new BirthdayCampaignProcessor(cnpj, userId),
-          new WelcomeCampaignProcessor(cnpj, userId),
-          new ReactivationCampaignProcessor(cnpj, userId),
-          new LoyaltyCampaignProcessor(cnpj, userId)
-        ];
-
-        await Promise.all(
-          processors.map(async (processor) => {
-            try {
-              await processor.process();
-              console.log(`Successfully processed ${processor.constructor.name} for CNPJ ${cnpj}`);
-            } catch (error) {
-              console.error(`Error processing ${processor.constructor.name} for CNPJ ${cnpj}:`, error);
-            }
-          })
-        );
-        
-        console.log(`Completed all campaign processing for CNPJ ${cnpj}`);
-      } catch (error) {
-        console.error(`Error in campaign batch for config document:`, error);
+export const triggerCampaignProcessing = functions
+  .runWith({
+    timeoutSeconds: 540,
+    memory: '1GB'
+  })
+  .https
+  .onRequest(async (req: functions.https.Request, res: functions.Response) => {
+    try {
+      if (req.method !== 'POST') {
+        res.status(405).send('Method Not Allowed');
+        return;
       }
-    }
-  } catch (error) {
-    console.error('Fatal error in campaign processor:', error);
-    throw error;
-  }
-};
 
-// Manual trigger endpoint
-export const triggerCampaignProcessing = async (
-  req: functions.https.Request,
-  res: functions.Response
-) => {
-  try {
-    if (req.method !== 'POST') {
-      res.status(405).send('Method Not Allowed');
-      return;
-    }
+      // Get userId from request body (sent by scheduler)
+      const userId = req.body.userId;
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'userId is required in request body'
+        });
+        return;
+      }
 
-    await processCampaigns({} as functions.EventContext, {});
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Manual trigger error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
+      // Get user's CNPJ
+      const configDoc = await db.collection('users')
+        .doc(userId)
+        .collection('config')
+        .doc('settings')
+        .get();
+
+      if (!configDoc.exists) {
+        res.status(404).json({
+          success: false,
+          error: `No configuration found for user ${userId}`
+        });
+        return;
+      }
+
+      const data = configDoc.data();
+      const cnpj = data?.cnpj;
+
+      if (!cnpj) {
+        res.status(400).json({
+          success: false,
+          error: 'No CNPJ found in user configuration'
+        });
+        return;
+      }
+
+      // Process all campaigns for this user
+      const processors = [
+        new BirthdayCampaignProcessor(cnpj, userId),
+        new WelcomeCampaignProcessor(cnpj, userId),
+        new ReactivationCampaignProcessor(cnpj, userId),
+        new LoyaltyCampaignProcessor(cnpj, userId)
+      ];
+
+      await Promise.all(
+        processors.map(async (processor) => {
+          try {
+            await processor.process();
+            console.log(`Successfully processed ${processor.constructor.name} for CNPJ ${cnpj}`);
+          } catch (error) {
+            console.error(`Error processing ${processor.constructor.name} for CNPJ ${cnpj}:`, error);
+          }
+        })
+      );
+
+      res.status(200).json({ 
+        success: true,
+        message: 'Campaign processing completed',
+        userId,
+        cnpj
+      });
+
+    } catch (error) {
+      console.error('Error processing campaigns:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
